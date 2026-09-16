@@ -26,7 +26,6 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Opdater sessionen hvis den er udløbet
   await supabase.auth.getUser()
 
   return response
