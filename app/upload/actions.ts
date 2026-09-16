@@ -2,9 +2,10 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic'; // Skiftet til Anthropic
+import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
-import pdf from 'pdf-parse';
+// Vi importerer pdf-parse på en måde, der omgår TypeScript's strenge type-tjek for gamle moduler
+import pdf from 'pdf-parse/lib/pdf-parse.js';
 
 export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
   const supabase = await createClient();
@@ -19,13 +20,23 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. Ekstraher tekst fra PDF
-    const data = await pdf(fileBlob);
+    // 2. KONVERTERING: Blob -> ArrayBuffer -> Buffer
+    // pdf-parse kræver en Node.js Buffer for at kunne læse PDF'en
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // 3. Ekstraher tekst fra PDF
+    // Vi bruger (pdf as any) for at fortælle TypeScript: "Stol på mig, det her er en funktion"
+    const data = await (pdf as any)(buffer);
     const extractedText = data.text;
 
-    // 3. Brug Claude AI til at finde "skal"-krav
+    if (!extractedText || extractedText.trim().length === 0) {
+      throw new Error("Kunne ikke udtrække tekst fra PDF-filen. Er filen tom eller krypteret?");
+    }
+
+    // 4. Brug Claude AI til at finde "skal"-krav
     const { object } = await generateObject({
-      model: anthropic('claude-3-5-sonnet-20240620'), // Bruger nu Claude 3.5 Sonnet
+      model: anthropic('claude-3-5-sonnet-20240620'),
       schema: z.object({
         requirements: z.array(z.object({
           section: z.string(),
@@ -36,11 +47,13 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
       Læs følgende tekst fra en standard og find alle obligatoriske krav (krav der indeholder ord som 'skal', 'must', 'shall', 'obligatorisk'). 
       For hvert krav skal du angive sektionen (f.eks. "4.1.2") og selve kravteksten.
       
+      Husk at være præcis og kun udtrække faktiske krav.
+      
       Tekst fra dokument:
       ${extractedText}`,
     });
 
-    // 4. Gem alle fundne krav i databasen
+    // 5. Gem alle fundne krav i databasen
     const requirementsToInsert = object.requirements.map(req => ({
       standard_id: stdData.id,
       section: req.section,
@@ -56,7 +69,7 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("Anthropic Analyse fejl:", error);
+    console.error("AI Analyse fejl:", error);
     return { error: error.message };
   }
 }
