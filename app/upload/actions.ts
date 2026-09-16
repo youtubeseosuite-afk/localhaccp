@@ -4,12 +4,16 @@ import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
+import { createRequire } from 'module';
+
+// Vi opretter en 'require'-funktion, så vi kan hente gamle CommonJS-moduler direkte
+const require = createRequire(import.meta.url);
 
 export async function analyzeStandard({ name, fileUrl }: any) {
   const supabase = await createClient();
 
   try {
-    // 1. FIX: Polyfill for DOMMatrix (vigtig for pdf-parse på server)
+    // 1. FIX: Polyfill for DOMMatrix
     if (typeof global.DOMMatrix === 'undefined') {
       (global as any).DOMMatrix = class {
         constructor() {}
@@ -35,27 +39,11 @@ export async function analyzeStandard({ name, fileUrl }: any) {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 4. ROBUST PDF IMPORT
-    // Vi prøver tre forskellige måder at hente pdf-parse funktionen på
-    const pdfModule = await import('pdf-parse');
+    // 4. DEN RIGTIGE MÅDE AT LOADE PDF-PARSE PÅ
+    // Vi bruger 'require' i stedet for 'import'. Dette omgår alle Webpack/ESM problemer.
+    const pdf = require('pdf-parse');
     
-    let pdfFn: any = null;
-    
-    if (typeof pdfModule.default === 'function') {
-      pdfFn = pdfModule.default;
-    } else if (typeof pdfModule === 'function') {
-      pdfFn = pdfModule;
-    } else if (pdfModule && typeof (pdfModule as any).parse === 'function') {
-      pdfFn = (pdfModule as any).parse;
-    }
-
-    if (!pdfFn) {
-      console.error("PDF Module Structure:", pdfModule);
-      throw new Error("Kunde ikke finde PDF-parse funktionen i modulet. Prøv igen.");
-    }
-
-    // Kør PDF-ekstraktion
-    const data = await pdfFn(buffer);
+    const data = await pdf(buffer);
     const extractedText = data.text;
 
     if (!extractedText || extractedText.trim().length === 0) {
@@ -95,7 +83,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("Full Server Action Error:", error);
+    console.error("Server Action Error:", error);
     return { error: error.message || "En ukendt fejl opstod under analysen." };
   }
 }
