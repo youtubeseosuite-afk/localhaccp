@@ -18,22 +18,32 @@ export async function analyzeStandard({ name, fileUrl, text }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. AI Analyse med Claude 3.5 Sonnet (Modtager direkte teksten fra browseren)
-    const { object } = await generateObject({
-      model: anthropic('claude-3-5-sonnet-20240620'),
-      schema: z.object({
-        requirements: z.array(z.object({
-          section: z.string(),
-          text: z.string(),
-        }))
-      }),
-      prompt: `Du er en ekspert i fødevarestandarder. 
-      Find alle obligatoriske krav (dem med 'skal', 'must', 'shall', 'obligatorisk') i følgende tekst.
-      Returner dem som en struktureret liste med sektionsnummer og tekst.
-      
-      Tekst:
-      ${text}`,
-    });
+    // 2. AI Analyse med Claude 3.5 Sonnet
+    // Vi bruger en try-catch specifikt omkring AI-kaldet for at fange API-fejl
+    let aiResult;
+    try {
+      aiResult = await generateObject({
+        model: anthropic('claude-3-5-sonnet-20240620'),
+        schema: z.object({
+          requirements: z.array(z.object({
+            section: z.string(),
+            text: z.string(),
+          }))
+        }),
+        prompt: `Du er en ekspert i fødevarestandarder. 
+        Find alle obligatoriske krav (dem med 'skal', 'must', 'shall', 'obligatorisk') i følgende tekst.
+        Returner dem som en struktureret liste med sektionsnummer og tekst.
+        
+        Tekst:
+        ${text}`,
+      });
+    } catch (aiError: any) {
+      console.error("Anthropic API Error:", aiError);
+      // Hvis det er en API-nøgle fejl, vil den her give os besked
+      throw new Error(`AI Service fejl: ${aiError.message || "Sørg for at ANTHROPIC_API_KEY er sat i Vercel."}`);
+    }
+
+    const { object } = aiResult;
 
     // 3. Gem krav
     const requirementsToInsert = object.requirements.map(req => ({
@@ -51,7 +61,7 @@ export async function analyzeStandard({ name, fileUrl, text }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("Server Action Error:", error);
+    console.error("Full Server Action Error:", error);
     return { error: error.message || "En ukendt fejl opstod under analysen." };
   }
 }
