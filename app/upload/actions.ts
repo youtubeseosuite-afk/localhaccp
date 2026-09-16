@@ -9,9 +9,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
   const supabase = await createClient();
 
   try {
-    // 1. FIX: Polyfill for DOMMatrix
-    // Dette snyder pdf-parse til at tro, at vi er i en browser, 
-    // så den ikke crasher over manglende DOM-funktioner.
+    // 1. FIX: Polyfill for DOMMatrix (vigtig for pdf-parse på server)
     if (typeof global.DOMMatrix === 'undefined') {
       (global as any).DOMMatrix = class {
         constructor() {}
@@ -29,25 +27,42 @@ export async function analyzeStandard({ name, fileUrl }: any) {
 
     if (stdError) throw stdError;
 
-    // 3. HENT filen fra Supabase Storage URL
+    // 3. HENT filen fra Supabase Storage
     const response = await fetch(fileUrl);
     if (!response.ok) {
-      throw new Error(`Kunne ikke hente filen fra storage. Tjek om din bucket er 'Public'.`);
+      throw new Error(`Kunne ikke hente filen fra storage. Status: ${response.status}`);
     }
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 4. Læs PDF'en dynamisk
+    // 4. ROBUST PDF IMPORT
+    // Vi prøver tre forskellige måder at hente pdf-parse funktionen på
     const pdfModule = await import('pdf-parse');
-    const pdf = (pdfModule as any).default || pdfModule;
-    const data = await pdf(buffer);
+    
+    let pdfFn: any = null;
+    
+    if (typeof pdfModule.default === 'function') {
+      pdfFn = pdfModule.default;
+    } else if (typeof pdfModule === 'function') {
+      pdfFn = pdfModule;
+    } else if (pdfModule && typeof (pdfModule as any).parse === 'function') {
+      pdfFn = (pdfModule as any).parse;
+    }
+
+    if (!pdfFn) {
+      console.error("PDF Module Structure:", pdfModule);
+      throw new Error("Kunde ikke finde PDF-parse funktionen i modulet. Prøv igen.");
+    }
+
+    // Kør PDF-ekstraktion
+    const data = await pdfFn(buffer);
     const extractedText = data.text;
 
     if (!extractedText || extractedText.trim().length === 0) {
       throw new Error("Kunne ikke udtrække tekst fra PDF-filen.");
     }
 
-    // 5. AI Analyse med Claude
+    // 5. AI Analyse med Claude 3.5 Sonnet
     const { object } = await generateObject({
       model: anthropic('claude-3-5-sonnet-20240620'),
       schema: z.object({
@@ -56,15 +71,15 @@ export async function analyzeStandard({ name, fileUrl }: any) {
           text: z.string(),
         }))
       }),
-      prompt: `Du er en ekspert i fødevarestandarder. 
-      Find alle obligatoriske krav ('skal', 'must', 'shall') i følgende tekst. 
-      Sektion og kravtekst skal returneres.
+      prompt: `Du er en ekspert i fødevarestandarder (IFS, BRCGS, ISO). 
+      Find alle obligatoriske krav (dem med 'skal', 'must', 'shall', 'obligatorisk') i følgende tekst.
+      Returner dem som en struktureret liste med sektionsnummer og tekst.
       
       Tekst:
       ${extractedText}`,
     });
 
-    // 6. Gem krav
+    // 6. Gem krav i databasen
     const requirementsToInsert = object.requirements.map(req => ({
       standard_id: stdData.id,
       section: req.section,
@@ -80,7 +95,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("Server Action Fejl:", error);
-    return { error: error.message };
+    console.error("Full Server Action Error:", error);
+    return { error: error.message || "En ukendt fejl opstod under analysen." };
   }
 }
