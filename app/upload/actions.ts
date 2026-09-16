@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
-// Vi importerer pdf-parse på en måde, der omgår TypeScript's strenge type-tjek for gamle moduler
-import pdf from 'pdf-parse/lib/pdf-parse.js';
 
 export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
   const supabase = await createClient();
@@ -21,13 +19,16 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
     if (stdError) throw stdError;
 
     // 2. KONVERTERING: Blob -> ArrayBuffer -> Buffer
-    // pdf-parse kræver en Node.js Buffer for at kunne læse PDF'en
     const arrayBuffer = await fileBlob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 3. Ekstraher tekst fra PDF
-    // Vi bruger (pdf as any) for at fortælle TypeScript: "Stol på mig, det her er en funktion"
-    const data = await (pdf as any)(buffer);
+    // 3. DYNAMISK IMPORT af pdf-parse
+    // Vi henter biblioteket herinde for at omgå Vercels build-time type-tjek
+    const pdfModule = await import('pdf-parse');
+    // pdf-parse eksporterer funktionen som 'default' eller direkte som modulet
+    const pdf = (pdfModule as any).default || pdfModule;
+    
+    const data = await pdf(buffer);
     const extractedText = data.text;
 
     if (!extractedText || extractedText.trim().length === 0) {
