@@ -5,6 +5,10 @@ import { createClient } from '@/lib/supabase/client';
 import { Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { analyzeStandard } from './actions';
+import * as pdfjs from 'pdfjs-dist';
+
+// Konfigurer PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -14,16 +18,34 @@ export default function UploadPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  // Funktion til at udtrække tekst fra PDF i browseren
+  async function extractTextFromPDF(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map((item: any) => item.str).join(" ");
+      fullText += pageText + "\n";
+    }
+    return fullText;
+  }
+
   async function handleUpload() {
     if (!file || !name) return alert('Udfyld venligst navn og vælg en fil');
     
     setLoading(true);
 
     try {
-      // 1. Upload til Supabase Storage
+      // 1. Udtræk tekst direkte i browseren (Lynhurtigt og stabilt)
+      const extractedText = await extractTextFromPDF(file);
+
+      // 2. Upload fil til Supabase Storage
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
-      const { data: storageData, error: storageError } = await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from('standards')
         .upload(fileName, file);
 
@@ -33,10 +55,11 @@ export default function UploadPage() {
         .from('standards')
         .getPublicUrl(fileName);
 
-      // 2. KALD Server Action med KUN URL (ikke fileBlob)
+      // 3. Send TEKSTEN og URL til serveren (Ingen tunge filer længere!)
       const result = await analyzeStandard({ 
         name, 
-        fileUrl: publicUrl 
+        fileUrl: publicUrl, 
+        text: extractedText 
       });
 
       if (result.error) throw new Error(result.error);
@@ -45,6 +68,7 @@ export default function UploadPage() {
       setTimeout(() => router.push('/dashboard'), 3000);
 
     } catch (error: any) {
+      console.error(error);
       alert(`Fejl: ${error.message}`);
     } finally {
       setLoading(false);
