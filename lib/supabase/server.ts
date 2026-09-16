@@ -12,18 +12,13 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        set(name, value, options) {
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...options })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set({ name, value, ...options })
+            )
           } catch (error) {
-            // Handle cookie setting error
-          }
-        },
-        remove(name, options) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+            // Dette kan ignoreres, hvis middleware håndterer refresh af tokens
           }
         },
       },
