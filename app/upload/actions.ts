@@ -9,7 +9,18 @@ export async function analyzeStandard({ name, fileUrl }: any) {
   const supabase = await createClient();
 
   try {
-    // 1. Gem standarden i databasen
+    // 1. FIX: Polyfill for DOMMatrix
+    // Dette snyder pdf-parse til at tro, at vi er i en browser, 
+    // så den ikke crasher over manglende DOM-funktioner.
+    if (typeof global.DOMMatrix === 'undefined') {
+      (global as any).DOMMatrix = class {
+        constructor() {}
+        multiply() { return this; }
+        translate() { return this; }
+      };
+    }
+
+    // 2. Gem standarden i databasen
     const { data: stdData, error: stdError } = await supabase
       .from('standards')
       .insert({ name, file_url: fileUrl })
@@ -18,15 +29,15 @@ export async function analyzeStandard({ name, fileUrl }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. HENT filen fra Supabase Storage URL
+    // 3. HENT filen fra Supabase Storage URL
     const response = await fetch(fileUrl);
     if (!response.ok) {
-      throw new Error(`Kunne ikke hente filen fra storage. Status: ${response.status}. Tjek om din bucket er sat til 'Public'.`);
+      throw new Error(`Kunne ikke hente filen fra storage. Tjek om din bucket er 'Public'.`);
     }
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 3. Læs PDF'en
+    // 4. Læs PDF'en dynamisk
     const pdfModule = await import('pdf-parse');
     const pdf = (pdfModule as any).default || pdfModule;
     const data = await pdf(buffer);
@@ -36,7 +47,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
       throw new Error("Kunne ikke udtrække tekst fra PDF-filen.");
     }
 
-    // 4. AI Analyse med Claude
+    // 5. AI Analyse med Claude
     const { object } = await generateObject({
       model: anthropic('claude-3-5-sonnet-20240620'),
       schema: z.object({
@@ -53,7 +64,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
       ${extractedText}`,
     });
 
-    // 5. Gem krav
+    // 6. Gem krav
     const requirementsToInsert = object.requirements.map(req => ({
       standard_id: stdData.id,
       section: req.section,
@@ -69,7 +80,7 @@ export async function analyzeStandard({ name, fileUrl }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("Serever Action Fejl:", error);
+    console.error("Server Action Fejl:", error);
     return { error: error.message };
   }
 }
