@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { generateObject } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic'; // Skiftet til Anthropic
 import { z } from 'zod';
 import pdf from 'pdf-parse';
 
@@ -19,13 +19,13 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. Ekstraher tekst fra PDF (fileBlob er den faktiske fil fra frontend)
+    // 2. Ekstraher tekst fra PDF
     const data = await pdf(fileBlob);
     const extractedText = data.text;
 
-    // 3. Brug AI til at finde "skal"-krav via Vercel AI SDK
+    // 3. Brug Claude AI til at finde "skal"-krav
     const { object } = await generateObject({
-      model: openai('gpt-4o'),
+      model: anthropic('claude-3-5-sonnet-20240620'), // Bruger nu Claude 3.5 Sonnet
       schema: z.object({
         requirements: z.array(z.object({
           section: z.string(),
@@ -56,7 +56,7 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("AI Analyse fejl:", error);
+    console.error("Anthropic Analyse fejl:", error);
     return { error: error.message };
   }
 }
