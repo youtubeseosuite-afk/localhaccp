@@ -5,10 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import { Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { analyzeStandard } from './actions';
-import * as pdfjs from 'pdfjs-dist';
-
-// Konfigurer PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -20,6 +16,13 @@ export default function UploadPage() {
 
   // Funktion til at udtrække tekst fra PDF i browseren
   async function extractTextFromPDF(file: File): Promise<string> {
+    // DYNAMISK IMPORT: Vi henter kun biblioteket herinde.
+    // Dette forhindrer Vercel i at crashe under build-fasen.
+    const pdfjs = await import('pdfjs-dist');
+    
+    // Konfigurer worker
+    pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
@@ -39,7 +42,7 @@ export default function UploadPage() {
     setLoading(true);
 
     try {
-      // 1. Udtræk tekst direkte i browseren (Lynhurtigt og stabilt)
+      // 1. Udtræk tekst direkte i browseren
       const extractedText = await extractTextFromPDF(file);
 
       // 2. Upload fil til Supabase Storage
@@ -55,7 +58,7 @@ export default function UploadPage() {
         .from('standards')
         .getPublicUrl(fileName);
 
-      // 3. Send TEKSTEN og URL til serveren (Ingen tunge filer længere!)
+      // 3. Send TEKSTEN og URL til serveren
       const result = await analyzeStandard({ 
         name, 
         fileUrl: publicUrl, 
