@@ -5,7 +5,7 @@ import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
-export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
+export async function analyzeStandard({ name, fileUrl }: any) {
   const supabase = await createClient();
 
   try {
@@ -18,24 +18,25 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. KONVERTERING: Blob -> ArrayBuffer -> Buffer
-    const arrayBuffer = await fileBlob.arrayBuffer();
+    // 2. HENT filen fra Supabase Storage URL
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(`Kunne ikke hente filen fra storage. Status: ${response.status}. Tjek om din bucket er sat til 'Public'.`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 3. DYNAMISK IMPORT af pdf-parse
-    // Vi henter biblioteket herinde for at omgå Vercels build-time type-tjek
+    // 3. Læs PDF'en
     const pdfModule = await import('pdf-parse');
-    // pdf-parse eksporterer funktionen som 'default' eller direkte som modulet
     const pdf = (pdfModule as any).default || pdfModule;
-    
     const data = await pdf(buffer);
     const extractedText = data.text;
 
     if (!extractedText || extractedText.trim().length === 0) {
-      throw new Error("Kunne ikke udtrække tekst fra PDF-filen. Er filen tom eller krypteret?");
+      throw new Error("Kunne ikke udtrække tekst fra PDF-filen.");
     }
 
-    // 4. Brug Claude AI til at finde "skal"-krav
+    // 4. AI Analyse med Claude
     const { object } = await generateObject({
       model: anthropic('claude-3-5-sonnet-20240620'),
       schema: z.object({
@@ -44,17 +45,15 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
           text: z.string(),
         }))
       }),
-      prompt: `Du er en ekspert i fødevarestandarder (som IFS, BRCGS, ISO). 
-      Læs følgende tekst fra en standard og find alle obligatoriske krav (krav der indeholder ord som 'skal', 'must', 'shall', 'obligatorisk'). 
-      For hvert krav skal du angive sektionen (f.eks. "4.1.2") og selve kravteksten.
+      prompt: `Du er en ekspert i fødevarestandarder. 
+      Find alle obligatoriske krav ('skal', 'must', 'shall') i følgende tekst. 
+      Sektion og kravtekst skal returneres.
       
-      Husk at være præcis og kun udtrække faktiske krav.
-      
-      Tekst fra dokument:
+      Tekst:
       ${extractedText}`,
     });
 
-    // 5. Gem alle fundne krav i databasen
+    // 5. Gem krav
     const requirementsToInsert = object.requirements.map(req => ({
       standard_id: stdData.id,
       section: req.section,
@@ -70,7 +69,7 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error("AI Analyse fejl:", error);
+    console.error("Serever Action Fejl:", error);
     return { error: error.message };
   }
 }
