@@ -1,9 +1,10 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { generateAI } from 'ai'; // Simuleret import fra Vercel AI SDK
-import { openai } from '@ai-sdk/openai'; // Kræver install af @ai-sdk/openai
+import { generateObject } from 'ai';
+import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
+import pdf from 'pdf-parse';
 
 export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
   const supabase = await createClient();
@@ -18,13 +19,11 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     if (stdError) throw stdError;
 
-    // 2. Ekstraher tekst fra PDF 
-    // (I en rigtig produktions-app ville vi bruge en PDF-parser som 'pdf-parse')
-    // For eksemplets skyld sender vi fil-referencen til AI'en
-    const extractedText = "HER VIL TEKSTEN FRA PDF'EN KOMME (SIMULERET)"; 
+    // 2. Ekstraher tekst fra PDF (fileBlob er den faktiske fil fra frontend)
+    const data = await pdf(fileBlob);
+    const extractedText = data.text;
 
-    // 3. Brug AI til at finde "skal"-krav
-    // Vi beder AI'en om at returnere et JSON array
+    // 3. Brug AI til at finde "skal"-krav via Vercel AI SDK
     const { object } = await generateObject({
       model: openai('gpt-4o'),
       schema: z.object({
@@ -33,8 +32,12 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
           text: z.string(),
         }))
       }),
-      prompt: `Du er en ekspert i fødevarestandarder. Læs følgende tekst fra en standard og find alle obligatoriske krav (sætninger med 'skal', 'must', 'shall'). 
-      Returner dem som en liste. Tekst: ${extractedText}`,
+      prompt: `Du er en ekspert i fødevarestandarder (som IFS, BRCGS, ISO). 
+      Læs følgende tekst fra en standard og find alle obligatoriske krav (krav der indeholder ord som 'skal', 'must', 'shall', 'obligatorisk'). 
+      For hvert krav skal du angive sektionen (f.eks. "4.1.2") og selve kravteksten.
+      
+      Tekst fra dokument:
+      ${extractedText}`,
     });
 
     // 4. Gem alle fundne krav i databasen
@@ -53,14 +56,7 @@ export async function analyzeStandard({ name, fileUrl, fileBlob }: any) {
 
     return { success: true };
   } catch (error: any) {
-    console.error(error);
+    console.error("AI Analyse fejl:", error);
     return { error: error.message };
   }
-}
-
-// Hjælpe-funktion til AI generering (forkortet version)
-async function generateObject({ model, schema, prompt }: any) {
-  // Dette er en forenklet version af Vercel AI SDK's generateObject
-  // I praksis bruger du 'ai' pakken fra Vercel
-  return { object: { requirements: [{ section: "4.1", text: "Virksomheden skal have en skriftlig rengøringsplan." }] } };
 }
