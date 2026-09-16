@@ -33,11 +33,10 @@ export default function UploadPage() {
         .from('standards')
         .getPublicUrl(fileName);
 
-      // 2. Kald Server Action til AI Analyse
+      // 2. KALD Server Action med KUN URL (ikke fileBlob)
       const result = await analyzeStandard({ 
         name, 
-        fileUrl: publicUrl, 
-        fileBlob: file 
+        fileUrl: publicUrl 
       });
 
       if (result.error) throw new Error(result.error);
@@ -92,7 +91,7 @@ export default function UploadPage() {
               ) : (
                 <div className="text-gray-400">
                   <Upload className="mx-auto mb-2" size={24} />
-                  <span>Klik for at vælge PDF</span>
+                  <span className="block">Klik for at vælge PDF</span>
                 </div>
               )}
               <input 
