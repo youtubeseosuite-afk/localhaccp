@@ -12,7 +12,7 @@
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "ai": "latest",
-    "@ai-sdk/openai": "latest",
+    "@ai-sdk/anthropic": "latest",
     "zod": "latest",
     "pdf-parse": "latest",
     "lucide-react": "latest",
