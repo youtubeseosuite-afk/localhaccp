@@ -14,7 +14,7 @@
     "ai": "latest",
     "@ai-sdk/anthropic": "latest",
     "zod": "latest",
-    "pdf-parse": "latest",
+    "pdfjs-dist": "latest",
     "lucide-react": "latest",
     "next": "14.2.3",
     "react": "^18.2.0",
@@ -28,7 +28,6 @@
     "@types/react-dom": "^18.2.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.0.0",
-    "@types/pdf-parse": "latest"
+    "typescript": "^5.0.0"
   }
 }
